@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1788597533314,
+      "tag": "0000_rapid_goliath",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1788612199158,
+      "tag": "0001_wet_alex_power",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788612778842,
+      "tag": "0002_clear_night_nurse",
+      "breakpoints": true
+    }
+  ]
+}
