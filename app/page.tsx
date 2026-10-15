@@ -1,6 +1,16 @@
 'use client';
-import { Check, Menu, Sparkles } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import {
+  ArrowDownToLine,
+  Check,
+  ChevronRight,
+  Circle,
+  LoaderCircle,
+  Menu,
+  Save,
+  Sparkles,
+  X,
+} from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { AssistantPanel } from '@/components/assistant-panel';
 import { DailyEditor } from '@/components/daily-editor';
@@ -11,15 +21,37 @@ import type { ViewKey } from '@/components/note-sidebar';
 import { useDailyNote } from '@/hooks/use-daily-note';
 import { displayDate, localDate, markdownNote } from '@/lib/daily-note';
 import type { NoteSummary } from '@/lib/daily-note';
+import type { SourceReference } from '@/lib/agent-context';
 
 export default function Home() {
   const [activeView, setActiveView] = useState<ViewKey>('today');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [agentOpen, setAgentOpen] = useState(false);
+  const agentTrigger = useRef<HTMLButtonElement>(null);
+  const mobileDialog = useRef<HTMLDialogElement>(null);
   const [query, setQuery] = useState('');
   const [recentNotes, setRecentNotes] = useState<NoteSummary[]>([]);
   const [listError, setListError] = useState('');
   const { date, note, status, ready, switching, error, session } =
     useDailyNote();
+  useEffect(() => {
+    if (!mobileNavOpen) return;
+    const dialog = mobileDialog.current;
+    if (!dialog) return;
+    dialog.showModal();
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      dialog.close();
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [mobileNavOpen]);
+  useEffect(() => {
+    const narrow = window.matchMedia('(max-width: 1250px)');
+    const closeOnWide = () => { if (!narrow.matches) setAgentOpen(false); };
+    narrow.addEventListener('change', closeOnWide);
+    return () => narrow.removeEventListener('change', closeOnWide);
+  }, []);
   const refreshNotes = useCallback(async () => {
     const response = await fetch(`/api/notes?q=${encodeURIComponent(query)}`, {
       cache: 'no-store',
@@ -61,6 +93,17 @@ export default function Home() {
     setActiveView(view);
     setMobileNavOpen(false);
   }
+  async function openSource(source: SourceReference) {
+    if (source.kind === 'daily') await openDate(source.targetId);
+    else await navigate(source.kind);
+    setAgentOpen(false);
+    window.setTimeout(() => {
+      const target = document.getElementById(`record-${source.targetId}`);
+      target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target?.focus({ preventScroll: true });
+      if (!target) agentTrigger.current?.focus();
+    }, 120);
+  }
   async function onArchived() {
     await session.open(date, true);
     try {
@@ -75,7 +118,7 @@ export default function Home() {
     );
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = `${date}-草稿.md`;
+    anchor.download = `${date}-每日手记.md`;
     anchor.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
@@ -103,51 +146,72 @@ export default function Home() {
   );
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
-      {mobileNavOpen && (
-        <div className="fixed inset-0 z-50 flex md:hidden">
-          <div className="relative z-10 w-72 overflow-y-auto">
-            {sidebar(true)}
-            <Button
-              className="absolute right-2 top-2"
-              variant="outline"
-              size="sm"
-              onClick={() => setMobileNavOpen(false)}
-            >
-              关闭
-            </Button>
-          </div>
-          <button
-            className="flex-1 bg-foreground/20 backdrop-blur-sm"
-            aria-label="关闭菜单"
-            onClick={() => setMobileNavOpen(false)}
-          />
-        </div>
-      )}
-      <div className="grid min-h-screen grid-cols-[248px_minmax(0,1fr)_320px] max-xl:grid-cols-[220px_minmax(0,1fr)] max-md:block">
+    <main className="workbench">
+      <a className="skip-link" href="#main-content">
+        跳转到记录内容
+      </a>
+      <dialog
+        ref={mobileDialog}
+        className="mobile-nav-dialog"
+        aria-label="知识库导航"
+        onCancel={() => setMobileNavOpen(false)}
+        onClose={() => setMobileNavOpen(false)}
+      >
+        {sidebar(true)}
+        <Button
+          className="mobile-nav-close"
+          variant="ghost"
+          size="icon"
+          aria-label="关闭菜单"
+          onClick={() => setMobileNavOpen(false)}
+        >
+          <X />
+        </Button>
+      </dialog>
+      <div className="app-shell">
         {sidebar()}
         <section className="min-w-0">
-          <header className="flex h-16 items-center justify-between border-b px-6 lg:px-10">
-            <div className="flex items-center gap-3">
+          <header className="workbench-header">
+            <div className="header-breadcrumb">
               <Button
                 variant="ghost"
                 size="icon"
-                className="md:hidden"
+                className="mobile-menu-button"
                 aria-label="打开菜单"
+                aria-expanded={mobileNavOpen}
                 onClick={() => setMobileNavOpen(true)}
               >
                 <Menu />
               </Button>
-              <span className="text-sm text-muted-foreground">知识库 /</span>
-              <span className="text-sm">
+              <span className="breadcrumb-parent">个人空间</span>
+              <ChevronRight
+                size={13}
+                className="breadcrumb-divider"
+                aria-hidden="true"
+              />
+              <span className="breadcrumb-current">
                 {activeView === 'today'
-                  ? displayDate(date)
+                  ? `每日记录 · ${displayDate(date)}`
                   : navigation.find((item) => item.key === activeView)?.label}
               </span>
             </div>
             {activeView === 'today' && (
-              <div className="flex items-center gap-2">
-                <output className="hidden text-xs text-muted-foreground sm:inline">
+              <div className="header-actions">
+                <output
+                  className={`save-status status-${status}`}
+                  aria-live="polite"
+                >
+                  {status === 'saved' ? (
+                    <Check size={13} aria-hidden="true" />
+                  ) : status === 'saving' || status === 'loading' ? (
+                    <LoaderCircle
+                      size={13}
+                      className="saving-spinner"
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <Circle size={8} aria-hidden="true" />
+                  )}
                   {
                     {
                       loading: '正在读取…',
@@ -160,7 +224,17 @@ export default function Home() {
                   }
                 </output>
                 <Button
-                  variant="outline"
+                  variant="ghost"
+                  size="icon"
+                  className="header-export"
+                  aria-label="导出当前笔记"
+                  disabled={!ready}
+                  onClick={exportDraft}
+                >
+                  <ArrowDownToLine size={17} />
+                </Button>
+                <Button
+                  className="save-note-button"
                   size="sm"
                   onClick={() => {
                     void session.save();
@@ -172,11 +246,16 @@ export default function Home() {
                     status === 'conflict'
                   }
                 >
-                  {status === 'saved' ? <Check /> : <Sparkles />}
+                  {status === 'saving' ? (
+                    <LoaderCircle className="saving-spinner" />
+                  ) : (
+                    <Save />
+                  )}
                   {status === 'saving' ? '保存中' : '保存笔记'}
                 </Button>
               </div>
             )}
+            <Button ref={agentTrigger} variant="outline" size="sm" className="agent-trigger" aria-label="打开记录对话 Agent" aria-expanded={agentOpen} onClick={() => setAgentOpen(true)}><Sparkles size={16} /><span>与你共想</span></Button>
           </header>
           {(error || listError) && (
             <div
@@ -216,13 +295,18 @@ export default function Home() {
               )}
             </div>
           )}
-          <article className="mx-auto max-w-3xl px-6 pb-20 pt-12 lg:px-12">
+          <article
+            id="main-content"
+            tabIndex={-1}
+            className="workspace-content"
+          >
             {activeView === 'today' ? (
               <DailyEditor
                 date={date}
                 note={note}
                 disabled={!ready || switching}
                 onChange={session.edit}
+                onOpenDate={openDate}
               />
             ) : activeView === 'inbox' ? (
               <InboxView onArchived={onArchived} />
@@ -235,7 +319,7 @@ export default function Home() {
             )}
           </article>
         </section>
-        <AssistantPanel />
+        <AssistantPanel open={agentOpen} onClose={() => { setAgentOpen(false); agentTrigger.current?.focus(); }} onOpenSource={openSource} />
       </div>
     </main>
   );

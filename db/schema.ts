@@ -47,3 +47,25 @@ export const knowledgeItems = sqliteTable(
     uniqueIndex('idx_knowledge_source_inbox').on(table.sourceInboxId),
   ],
 );
+
+export const agentConversations = sqliteTable('agent_conversations', {
+  id: text('id').primaryKey(),
+  title: text('title').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
+export const agentMessages = sqliteTable(
+  'agent_messages',
+  {
+    id: text('id').primaryKey(),
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => agentConversations.id, { onDelete: 'cascade' }),
+    role: text('role').notNull(),
+    content: text('content').notNull(),
+    sources: text('sources').notNull().default('[]'),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [index('idx_agent_messages_conversation_created').on(table.conversationId, table.createdAt)],
+);

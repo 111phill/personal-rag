@@ -17,6 +17,7 @@ import {
   NativeSelectOption,
 } from '@/components/ui/native-select';
 import { Textarea } from '@/components/ui/textarea';
+import { SpaceHeading } from '@/components/space-heading';
 
 export type LibraryKind = 'work' | 'learning' | 'insights';
 type ItemStatus = 'active' | 'paused' | 'completed';
@@ -202,45 +203,52 @@ export function LibraryView({
   }
 
   return (
-    <section>
-      <p className="text-xs font-semibold uppercase tracking-[.14em] text-primary">
-        {config.eyebrow}
-      </p>
-      <div className="mt-3 flex items-end justify-between gap-4">
-        <div>
-          <h1 className="font-serif text-4xl font-semibold tracking-tight sm:text-5xl">
-            {config.title}
-          </h1>
-          <p className="mt-4 max-w-xl text-sm leading-7 text-muted-foreground">
-            {config.description}
-          </p>
-        </div>
-        <span className="shrink-0 rounded-full bg-secondary px-3 py-1 text-xs text-muted-foreground">
-          {items.length} 条记录
-        </span>
-      </div>
+    <section className="collection-view">
+      <SpaceHeading
+        eyebrow={config.eyebrow}
+        title={config.title}
+        description={config.description}
+        count={items.length}
+        countLabel="条记录"
+        icon={Icon}
+        tone={
+          kind === 'learning' ? 'olive' : kind === 'insights' ? 'honey' : 'clay'
+        }
+      />
 
-      <div className="mt-9 rounded-2xl border bg-card p-5 shadow-sm">
+      <div className="collection-composer">
+        <div className="composer-label">
+          <Plus size={15} aria-hidden="true" />
+          <h2>{config.action}</h2>
+        </div>
+        <label htmlFor="new-record-title" className="field-label">
+          记录标题
+        </label>
         <Input
+          id="new-record-title"
           disabled={busy}
           value={title}
           onChange={(event) => setTitle(event.target.value)}
-          className="h-10 border-0 bg-transparent px-0 text-base font-medium shadow-none focus-visible:ring-0"
+          className="collection-title-input"
           placeholder={config.titlePlaceholder}
           aria-label={config.titlePlaceholder}
         />
+        <label htmlFor="new-record-content" className="field-label">
+          详细内容
+        </label>
         <Textarea
+          id="new-record-content"
           disabled={busy}
           value={content}
           onChange={(event) => setContent(event.target.value)}
-          className="mt-2 min-h-24 resize-none border-0 bg-transparent px-0 leading-7 shadow-none focus-visible:ring-0"
+          className="collection-content-input"
           placeholder={config.contentPlaceholder}
           aria-label={config.contentPlaceholder}
         />
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-          <span className="text-xs text-muted-foreground">
+          <output className="composer-message">
             {message || '内容会独立保存在这个空间'}
-          </span>
+          </output>
           <div className="flex items-center gap-2">
             <NativeSelect
               disabled={busy}
@@ -288,10 +296,7 @@ export function LibraryView({
         )}
         <div className="space-y-3">
           {items.map((item) => (
-            <article
-              key={item.id}
-              className="rounded-2xl border bg-card p-4 shadow-sm"
-            >
+            <article key={item.id} id={`record-${item.id}`} tabIndex={-1} className="collection-entry">
               <div className="flex items-start gap-3">
                 <Input
                   disabled={busy}
@@ -308,7 +313,7 @@ export function LibraryView({
                   onBlur={() => {
                     void updateItem(item);
                   }}
-                  className="h-9 flex-1 border-0 bg-transparent px-0 text-base font-medium shadow-none focus-visible:ring-0"
+                  className="entry-title-input"
                   aria-label="记录标题"
                 />
                 {item.sourceInboxId && (
@@ -332,7 +337,7 @@ export function LibraryView({
                 onBlur={() => {
                   void updateItem(item);
                 }}
-                className="mt-1 min-h-20 resize-none border-0 bg-transparent px-0 leading-7 shadow-none focus-visible:ring-0"
+                className="entry-content-input"
                 placeholder="补充详细内容…"
                 aria-label="记录正文"
               />

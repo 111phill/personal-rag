@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Inbox, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { SpaceHeading } from '@/components/space-heading';
 import {
   NativeSelect,
   NativeSelectOption,
@@ -130,37 +131,38 @@ export function InboxView({ onArchived }: { onArchived: () => Promise<void> }) {
   }
 
   return (
-    <section>
-      <p className="text-xs font-semibold uppercase tracking-[.14em] text-primary">
-        快速收集
-      </p>
-      <div className="mt-3 flex items-end justify-between gap-4">
-        <div>
-          <h1 className="font-serif text-4xl font-semibold tracking-tight sm:text-5xl">
-            收集箱
-          </h1>
-          <p className="mt-4 max-w-xl text-sm leading-7 text-muted-foreground">
-            先记录，不分类。整理时再归档到真正属于它的位置。
-          </p>
-        </div>
-        <span className="shrink-0 rounded-full bg-secondary px-3 py-1 text-xs text-muted-foreground">
-          {items.length} 条待整理
-        </span>
-      </div>
+    <section className="collection-view">
+      <SpaceHeading
+        eyebrow="先收藏，再慢慢整理"
+        title="灵感的收集箱"
+        description="一个想法、一段摘录、一个值得回看的链接。先留下，再找到它的归处。"
+        count={items.length}
+        countLabel="条待整理"
+        icon={Inbox}
+        tone="honey"
+      />
 
-      <div className="mt-9 rounded-2xl border bg-card p-5 shadow-sm">
+      <div className="collection-composer">
+        <div className="composer-label">
+          <Plus size={15} aria-hidden="true" />
+          <h2>捕捉一个新想法</h2>
+        </div>
+        <label className="field-label" htmlFor="inbox-draft">
+          想收集的内容
+        </label>
         <Textarea
+          id="inbox-draft"
           disabled={busy}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
-          className="min-h-28 resize-none border-0 bg-transparent px-0 text-[15px] leading-7 shadow-none focus-visible:ring-0"
+          className="collection-content-input min-h-32"
           placeholder="记录一个想法、链接或待办…"
           aria-label="快速记录"
         />
-        <div className="mt-3 flex items-center justify-between border-t pt-4">
-          <span className="text-xs text-muted-foreground">
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+          <output className="composer-message">
             {message || '无需现在决定它属于哪里'}
-          </span>
+          </output>
           <Button onClick={createItem} disabled={!draft.trim() || busy}>
             <Plus />
             保存到收集箱
@@ -191,10 +193,7 @@ export function InboxView({ onArchived }: { onArchived: () => Promise<void> }) {
         )}
         <div className="space-y-3">
           {items.map((item) => (
-            <article
-              key={item.id}
-              className="rounded-2xl border bg-card p-4 shadow-sm"
-            >
+            <article key={item.id} id={`record-${item.id}`} tabIndex={-1} className="collection-entry">
               <Textarea
                 disabled={busy}
                 value={item.content}
@@ -210,7 +209,7 @@ export function InboxView({ onArchived }: { onArchived: () => Promise<void> }) {
                 onBlur={() => {
                   void updateItem(item);
                 }}
-                className="min-h-20 resize-none border-0 bg-transparent px-0 leading-7 shadow-none focus-visible:ring-0"
+                className="entry-content-input"
                 aria-label="收集内容"
               />
               <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t pt-3">

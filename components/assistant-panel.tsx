@@ -1,16 +1,164 @@
-import { ArrowDownToLine, ArrowRight, BookOpen, Check, Lightbulb, NotebookPen, Sparkles, Target } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import type { DailyNote } from '@/lib/daily-note';
-import type { ViewKey } from '@/components/note-sidebar';
+'use client';
 
-export function AssistantPanel({ note, activeView, ready, onExport }: { note: DailyNote; activeView: ViewKey; ready: boolean; onExport: () => void }) {
-  const completed = note.goals.filter((goal) => goal.completed).length;
-  const progress = note.goals.length ? Math.round(completed / note.goals.length * 100) : 0;
-  return <aside className="companion-panel" aria-label="记录助手与笔记概览">
-    <div className="companion-heading"><Sparkles size={17} aria-hidden="true" /><span>与你一起，把想法理清</span></div>
-    <div className="assistant-card"><div className="assistant-top"><span className="assistant-symbol"><Sparkles size={23} strokeWidth={1.4} aria-hidden="true" /></span><span className="coming-badge">即将相遇</span></div><h2>你的灵感小助手</h2><p>让零散的记录产生连接。<br />陪你整理思考，发现新的可能。</p><div className="assistant-capabilities"><span><Check size={13} aria-hidden="true" /> 梳理记录中的关键想法</span><span><Check size={13} aria-hidden="true" /> 串联相关的历史笔记</span><span><Check size={13} aria-hidden="true" /> 从思考中找到下一步</span></div><Button disabled className="assistant-disabled"><Sparkles size={14} aria-hidden="true" /> 小助手尚未接入</Button></div>
-    {activeView === 'today' && <><section className="overview-card"><div className="aside-section-title"><h2>今日目标进度</h2><span>{ready ? `${completed} / ${note.goals.length}` : '—'}</span></div><div className="progress-track" role="progressbar" aria-label="今日目标完成进度" aria-valuenow={ready ? progress : 0} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${ready ? progress : 0}%` }} /></div><p>{!ready ? '正在读取你的记录…' : note.goals.length === 0 ? '写下一个小目标，就是好的开始。' : progress === 100 ? '今天的目标都完成了，给自己一点肯定。' : `已完成 ${progress}%，按照自己的节奏前进。`}</p></section><section className="journal-outline"><div className="aside-section-title"><h2>这篇手记</h2><BookOpen size={15} aria-hidden="true" /></div>{[{ id: 'daily-goals', label: '今日目标', icon: Target }, { id: 'daily-body', label: '工作与学习', icon: NotebookPen }, { id: 'daily-thought', label: '此刻的思考', icon: Lightbulb }, { id: 'daily-actions', label: '明日行动', icon: ArrowRight }].map(({ id, label, icon: Icon }) => <a href={`#${id}`} key={id}><Icon size={15} aria-hidden="true" /><span>{label}</span><ArrowRight size={12} aria-hidden="true" /></a>)}<button className="export-note-link" disabled={!ready} onClick={onExport}><ArrowDownToLine size={15} aria-hidden="true" />导出为 Markdown</button></section></>}
-    <div className="writing-prompt"><span className="eyebrow">留一点时间给自己</span><p>今天有什么事，<br />让你有了新的理解？</p><span className="prompt-line" /><small>一个好问题，也是一份收获。</small></div>
-    <p className="companion-footer">YOUR THOUGHTS, CONNECTED.</p>
-  </aside>;
+import { ArrowRight, BookOpen, LoaderCircle, MessageCircle, Plus, Send, Sparkles, X } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import type { AgentConversation, AgentMessage } from '@/db/agent-store';
+import type { SourceReference } from '@/lib/agent-context';
+
+type AgentState = { configured: boolean; configurationError: string; suggestions: string[] };
+
+async function responseJson<T>(response: Response): Promise<T> {
+  const data = await response.json().catch(() => ({ error: '服务暂不可用，请稍后重试' })) as T & { error?: string };
+  if (!response.ok) throw new Error(data.error || '请求失败，请重试');
+  return data;
+}
+
+export function AssistantPanel({ open, onClose, onOpenSource }: {
+  open: boolean;
+  onClose: () => void;
+  onOpenSource: (source: SourceReference) => Promise<void>;
+}) {
+  const [state, setState] = useState<AgentState | null>(null);
+  const [conversations, setConversations] = useState<AgentConversation[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<AgentMessage[]>([]);
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const panelRef = useRef<HTMLElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  const refreshConversations = useCallback(async () => {
+    const data = await responseJson<{ conversations: AgentConversation[] }>(await fetch('/api/agent/conversations', { cache: 'no-store' }));
+    setConversations(data.conversations);
+    return data.conversations;
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      fetch('/api/agent', { cache: 'no-store' }).then(responseJson<AgentState>),
+      fetch('/api/agent/conversations', { cache: 'no-store' }).then(responseJson<{ conversations: AgentConversation[] }>),
+    ]).then(([agent, data]) => {
+      if (cancelled) return;
+      setState(agent);
+      setConversations(data.conversations);
+      setActiveId((current) => current ?? data.conversations[0]?.id ?? null);
+      setError('');
+    }).catch((cause: unknown) => {
+      if (!cancelled) setError(cause instanceof Error ? cause.message : '助手读取失败');
+    }).finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!activeId) return;
+    let cancelled = false;
+    fetch(`/api/agent/messages?conversationId=${encodeURIComponent(activeId)}`, { cache: 'no-store' })
+      .then(responseJson<{ messages: AgentMessage[] }>)
+      .then((data) => { if (!cancelled) { setMessages(data.messages); setError(''); } })
+      .catch((cause: unknown) => { if (!cancelled) setError(cause instanceof Error ? cause.message : '对话读取失败'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [activeId]);
+
+  useEffect(() => { bottomRef.current?.scrollIntoView({ block: 'end' }); }, [messages, busy]);
+  const handlePanelKeyDown = useCallback((event: KeyboardEvent) => {
+    if (!open || !window.matchMedia('(max-width: 1250px)').matches) return;
+    if (event.key === 'Escape') { event.preventDefault(); onClose(); return; }
+    if (event.key !== 'Tab') return;
+    const focusable = [...(panelRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), select:not(:disabled), textarea:not(:disabled)') ?? [])];
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  }, [open, onClose]);
+
+  useEffect(() => {
+    if (!open || !window.matchMedia('(max-width: 1250px)').matches) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    if (inputRef.current?.disabled) closeRef.current?.focus();
+    else inputRef.current?.focus();
+    document.addEventListener('keydown', handlePanelKeyDown);
+    return () => { document.body.style.overflow = previous; document.removeEventListener('keydown', handlePanelKeyDown); };
+  }, [open, handlePanelKeyDown]);
+
+  async function newConversation() {
+    if (busy) return;
+    try {
+      const data = await responseJson<{ conversation: AgentConversation }>(await fetch('/api/agent/conversations', { method: 'POST' }));
+      setConversations((current) => [data.conversation, ...current]);
+      setLoading(true);
+      setActiveId(data.conversation.id);
+      setMessages([]);
+      setError('');
+      inputRef.current?.focus();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : '新建对话失败'); }
+  }
+
+  async function send(question = draft) {
+    const content = question.trim();
+    if (!content || busy || !state?.configured) return;
+    if (content.length > 3000) { setError('问题不能超过 3000 字'); return; }
+    setBusy(true);
+    setError('');
+    let newConversationId: string | null = null;
+    try {
+      let conversationId = activeId;
+      if (!conversationId) {
+        const data = await responseJson<{ conversation: AgentConversation }>(await fetch('/api/agent/conversations', { method: 'POST' }));
+        conversationId = data.conversation.id;
+        newConversationId = conversationId;
+        setConversations((current) => [data.conversation, ...current]);
+      }
+      const data = await responseJson<{ messages: AgentMessage[] }>(await fetch('/api/agent/messages', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversationId, content }),
+      }));
+      setActiveId(conversationId);
+      setMessages((current) => [...current, ...data.messages]);
+      setDraft('');
+      void refreshConversations().catch(() => {});
+      inputRef.current?.focus();
+    } catch (cause) {
+      if (newConversationId) setActiveId(newConversationId);
+      setError(cause instanceof Error ? cause.message : '回答失败，请重试');
+      setDraft(content);
+    } finally { setBusy(false); }
+  }
+
+  return <>
+    {open && <button className="agent-backdrop" aria-label="关闭助手" onClick={onClose} />}
+    <aside ref={panelRef} className={`companion-panel agent-panel ${open ? 'is-open' : ''}`} aria-label="记录对话 Agent">
+      <div className="agent-panel-head">
+        <div className="agent-identity"><span className="assistant-symbol"><Sparkles size={19} aria-hidden="true" /></span><div><strong>与你共想</strong><small>基于你的记录继续对话</small></div></div>
+        <div className="agent-head-actions">
+          <Button variant="ghost" size="icon" aria-label="开启新对话" title="开启新对话" onClick={() => void newConversation()} disabled={busy || !state?.configured}><Plus size={18} /></Button>
+          <Button ref={closeRef} variant="ghost" size="icon" className="agent-close" aria-label="关闭助手" onClick={onClose}><X size={18} /></Button>
+        </div>
+      </div>
+      <div className="agent-history-row"><MessageCircle size={14} aria-hidden="true" /><select aria-label="选择历史对话" value={activeId ?? ''} onChange={(event) => { setMessages([]); setLoading(Boolean(event.target.value)); setActiveId(event.target.value || null); }} disabled={busy}><option value="">新的对话</option>{conversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></div>
+      <div className="agent-transcript" aria-live="polite" aria-busy={busy || loading}>
+        {loading && <p className="agent-state"><LoaderCircle className="saving-spinner" size={16} /> 正在读取对话…</p>}
+        {!loading && messages.length === 0 && <div className="agent-welcome"><Sparkles size={24} aria-hidden="true" /><h2>从你的记录出发</h2><p>可以聊近期目标、工作与学习，也可以问我从过去的想法里看到了什么。</p></div>}
+        {!loading && messages.length === 0 && state && state.suggestions.length > 0 && <div className="agent-suggestions"><span>从这里开始</span>{state.suggestions.map((suggestion) => <button key={suggestion} disabled={!state.configured || busy} onClick={() => void send(suggestion)}>{suggestion}<ArrowRight size={13} aria-hidden="true" /></button>)}</div>}
+        {messages.map((message) => <div className={`agent-message agent-message-${message.role}`} key={message.id}><span className="agent-message-role">{message.role === 'assistant' ? '与你共想' : '我'}</span><p>{message.content}</p>{message.sources.length > 0 && <div className="agent-sources"><span>依据的记录</span>{message.sources.map((source) => <button key={source.id} onClick={() => void onOpenSource(source)} title={`打开 ${source.title}`}><BookOpen size={12} aria-hidden="true" />【{source.number}】{source.title}</button>)}</div>}</div>)}
+        {busy && <p className="agent-state"><LoaderCircle className="saving-spinner" size={16} /> 正在梳理相关记录…</p>}
+        <div ref={bottomRef} />
+      </div>
+      <div className="agent-composer">
+        {state && !state.configured && <p className="agent-config-note">{state.configurationError || '模型服务尚未配置。请在服务端设置 AGENT_API_BASE_URL、AGENT_MODEL 和 AGENT_API_KEY。'}</p>}
+        {error && <p className="agent-error" role="alert">{error}</p>}
+        <label htmlFor="agent-question">问问你的记录</label>
+        <textarea ref={inputRef} id="agent-question" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(); } }} placeholder="最近我在努力推进什么？" rows={3} maxLength={3000} disabled={busy || !state?.configured} />
+        <div className="agent-composer-bottom"><span>相关记录会发送至配置的模型服务 · Shift + Enter 换行</span><Button size="icon" aria-label="发送问题" disabled={!draft.trim() || busy || !state?.configured} onClick={() => void send()}>{busy ? <LoaderCircle className="saving-spinner" size={16} /> : <Send size={16} />}</Button></div>
+      </div>
+    </aside>
+  </>;
 }
