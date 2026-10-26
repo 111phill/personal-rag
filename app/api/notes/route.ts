@@ -1,5 +1,5 @@
 import { getDb } from '@/db';
-import { readNote, saveDailyNote } from '@/db/note-store';
+import { MigrationRequired, readNote, saveDailyNote } from '@/db/note-store';
 import { isDate, isDailyNote, serializeNote } from '@/lib/daily-note';
 
 export async function GET(request: Request) {
@@ -47,7 +47,14 @@ export async function PUT(request: Request) {
   const content = serializeNote(note);
   if (content.length > 100_000)
     return Response.json({ error: '笔记超过长度上限' }, { status: 400 });
-  const version = await saveDailyNote(getDb(), date, content, expectedVersion);
+  let version: string | null;
+  try {
+    version = await saveDailyNote(getDb(), date, content, expectedVersion);
+  } catch (error) {
+    if (error instanceof MigrationRequired)
+      return Response.json({ error: error.message }, { status: 503 });
+    throw error;
+  }
   if (!version)
     return Response.json(
       {

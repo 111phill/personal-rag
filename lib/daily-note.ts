@@ -1,10 +1,11 @@
 export type Goal = { id: string; text: string; completed: boolean };
-export type DailyNote = {
+export type LegacyDailyNote = {
   goals: Goal[];
   body: string;
   thought: string;
   actions: Goal[];
 };
+export type DailyNote = Pick<LegacyDailyNote, 'body' | 'thought'>;
 export type NoteRecord = {
   date: string;
   title: string;
@@ -14,7 +15,7 @@ export type NoteRecord = {
 export type NoteSummary = Pick<NoteRecord, 'date' | 'title'>;
 
 export function emptyNote(): DailyNote {
-  return { goals: [], body: '', thought: '', actions: [] };
+  return { body: '', thought: '' };
 }
 
 export function isDailyNote(value: unknown): value is DailyNote {
@@ -23,33 +24,75 @@ export function isDailyNote(value: unknown): value is DailyNote {
   return (
     typeof record.body === 'string' &&
     typeof record.thought === 'string' &&
-    [record.goals, record.actions].every(
-      (items) =>
-        Array.isArray(items) &&
-        items.every((item: unknown) => {
-          if (!item || typeof item !== 'object') return false;
-          const goal = item as Record<string, unknown>;
-          return (
-            typeof goal.id === 'string' &&
-            typeof goal.text === 'string' &&
-            typeof goal.completed === 'boolean'
-          );
-        }),
-    )
+    !('goals' in record) &&
+    !('actions' in record)
   );
 }
 
-export function parseNote(content: string): DailyNote {
-  if (content.startsWith('{"format":"daily-note-v1",')) {
-    const parsed: unknown = JSON.parse(content);
-    const record = parsed as Record<string, unknown>;
-    if (!isDailyNote(record.note))
+function legacyList(value: unknown): Goal[] | null {
+  if (!Array.isArray(value)) return null;
+  const result: Goal[] = [];
+  for (const item of value as unknown[]) {
+    if (!item || typeof item !== 'object') return null;
+    const goal = item as Record<string, unknown>;
+    if (
+      !(goal.id == null || typeof goal.id === 'string') ||
+      typeof goal.text !== 'string' ||
+      typeof goal.completed !== 'boolean'
+    )
+      return null;
+    result.push({
+      id: typeof goal.id === 'string' ? goal.id : '',
+      text: goal.text,
+      completed: goal.completed,
+    });
+  }
+  return result;
+}
+
+export function readNoteEnvelope(content: string): {
+  format: 'daily-note-v1' | 'daily-note-v2';
+  note: unknown;
+} | null {
+  if (!content.trimStart().startsWith('{')) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch (error) {
+    if (content.trimStart().startsWith('{"format":"daily-note-v')) throw error;
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object') return null;
+  const record = parsed as Record<string, unknown>;
+  return record.format === 'daily-note-v1' || record.format === 'daily-note-v2'
+    ? { format: record.format, note: record.note }
+    : null;
+}
+
+export function parseLegacyNote(content: string): LegacyDailyNote {
+  const envelope = readNoteEnvelope(content);
+  if (envelope?.format === 'daily-note-v2') {
+    if (!isDailyNote(envelope.note))
       throw new Error('笔记数据格式损坏，请保留原文');
-    return record.note;
+    return { ...envelope.note, goals: [], actions: [] };
+  }
+  if (envelope?.format === 'daily-note-v1') {
+    const note = envelope.note as Record<string, unknown> | null;
+    const goals = legacyList(note?.goals);
+    const actions = legacyList(note?.actions);
+    if (
+      !note ||
+      typeof note.body !== 'string' ||
+      typeof note.thought !== 'string' ||
+      !goals ||
+      !actions
+    )
+      throw new Error('笔记数据格式损坏，请保留原文');
+    return { body: note.body, thought: note.thought, goals, actions };
   }
   // 仅用于读取旧版 Markdown；新记录的分区不再依赖标题文本。
   if (!content.startsWith('## 今日目标'))
-    return { ...emptyNote(), body: content };
+    return { ...emptyNote(), body: content, goals: [], actions: [] };
   const [goalBlock = '', ...bodyParts] = content
     .replace(/\r\n/g, '\n')
     .split('\n## 工作与学习\n');
@@ -80,7 +123,15 @@ export function parseNote(content: string): DailyNote {
 }
 
 export function serializeNote(note: DailyNote): string {
-  return JSON.stringify({ format: 'daily-note-v1', note });
+  return JSON.stringify({
+    format: 'daily-note-v2',
+    note: { body: note.body, thought: note.thought },
+  });
+}
+
+export function parseNote(content: string): DailyNote {
+  const { body, thought } = parseLegacyNote(content);
+  return { body, thought };
 }
 
 export function appendToNote(
@@ -94,16 +145,12 @@ export function appendToNote(
 }
 
 export function markdownNote(note: DailyNote): string {
-  const checklist = (items: Goal[]) =>
-    items
-      .map((item) => `- [${item.completed ? 'x' : ' '}] ${item.text}`)
-      .join('\n');
-  return `## 今日目标\n${checklist(note.goals)}\n\n## 工作与学习\n${note.body}\n\n## 思考\n${note.thought}\n\n## 明日行动\n${checklist(note.actions)}`;
+  return `## 工作与学习\n${note.body}\n\n## 思考\n${note.thought}`;
 }
 
-export function localDate(): string {
+export function localDate(value = new Date()): string {
   return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai' }).format(
-    new Date(),
+    value,
   );
 }
 

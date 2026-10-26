@@ -29,7 +29,12 @@ export function useDailyNote() {
               throw new SaveConflict(
                 '笔记已被其他页面或归档更新。草稿已保留，请先导出，再读取最新版本合并。',
               );
-            if (!response.ok) throw new Error('保存失败，草稿已保留，请重试');
+            if (!response.ok) {
+              const body = (await response.json().catch(() => null)) as {
+                error?: string;
+              } | null;
+              throw new Error(body?.error ?? '保存失败，草稿已保留，请重试');
+            }
             return ((await response.json()) as { updatedAt: string }).updatedAt;
           },
         },

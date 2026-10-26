@@ -6,6 +6,8 @@ import {
   emptyNote,
   markdownNote,
   parseNote,
+  parseLegacyNote,
+  isDailyNote,
   serializeNote,
 } from '../lib/daily-note.ts';
 import type { DailyNote, NoteRecord } from '../lib/daily-note.ts';
@@ -41,15 +43,23 @@ function memoryDrafts() {
   };
 }
 
-void test('structured notes preserve headings, whitespace and empty action rows; legacy Markdown remains readable', () => {
+void test('v2 preserves body text, rejects legacy writes and keeps legacy checklists readable for migration', () => {
   const note = {
     goals: [{ id: 'g', text: '目标', completed: true }],
     body: '正文\n## 思考\n这是正文标题\n  ',
     thought: '思考\n## 明日行动\n保留原文',
     actions: [{ id: 'a', text: '', completed: false }],
   };
-  assert.deepEqual(parseNote(serializeNote(note)), note);
-  const legacy = parseNote(
+  assert.deepEqual(parseNote(serializeNote(note)), {
+    body: note.body,
+    thought: note.thought,
+  });
+  assert.equal(isDailyNote(note), false);
+  assert.deepEqual(
+    parseLegacyNote(JSON.stringify({ format: 'daily-note-v1', note })),
+    note,
+  );
+  const legacy = parseLegacyNote(
     '## 今日目标\n- [x] 目标\n\n## 工作与学习\n正文\n\n## 思考\n想法\n\n## 明日行动\n- [ ] 行动',
   );
   assert.equal(legacy.body, '正文');

@@ -1,5 +1,33 @@
-import { appendToNote, displayDate } from '../lib/daily-note.ts';
+import {
+  appendToNote,
+  displayDate,
+  parseLegacyNote,
+} from '../lib/daily-note.ts';
 import type { NoteRecord } from '../lib/daily-note.ts';
+
+export class MigrationRequired extends Error {}
+async function protectLegacyActions(
+  db: D1Database,
+  date: string,
+  content: string,
+) {
+  const legacy = parseLegacyNote(content);
+  if (![...legacy.goals, ...legacy.actions].some((a) => a.text.trim())) return;
+  try {
+    const imported = await db
+      .prepare(
+        `SELECT m.imported FROM action_migration_notes m JOIN notes n ON n.id=m.note_id WHERE n.date=? AND n.category='daily' AND m.migration_version='unified-actions-v1'`,
+      )
+      .bind(date)
+      .first<{ imported: number }>();
+    if (imported?.imported) return;
+  } catch {
+    /* A missing migration table also means the original checklist must be preserved. */
+  }
+  throw new MigrationRequired(
+    '旧行动尚未迁移，请停止服务、备份数据库并执行 npm run db:init 后重试',
+  );
+}
 
 export async function readNote(db: D1Database, date: string) {
   return db
@@ -51,6 +79,8 @@ export async function saveDailyNote(
   content: string,
   expectedVersion: string | null,
 ) {
+  const existing = await readNote(db, date);
+  if (existing) await protectLegacyActions(db, date, existing.content);
   const { statement, timestamp } = noteWrite(
     db,
     date,
@@ -76,6 +106,7 @@ export async function archiveDailyNote(
   section: 'body' | 'thought',
 ) {
   const current = await readNote(db, date);
+  if (current) await protectLegacyActions(db, date, current.content);
   const addition =
     source === 'thought'
       ? `### ${item.title ?? '未命名思考'}${item.content ? '\n' + item.content : ''}`

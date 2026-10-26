@@ -6,6 +6,7 @@ import {
   BookOpen,
   CalendarDays,
   ChevronRight,
+  ClipboardCheck,
   FileText,
   FolderKanban,
   Inbox,
@@ -23,6 +24,7 @@ import type { NoteSummary } from '@/lib/daily-note';
 
 export const navigation = [
   { key: 'today', label: '今日记录', icon: CalendarDays },
+  { key: 'review', label: '周复盘', icon: ClipboardCheck },
   { key: 'inbox', label: '收集箱', icon: Inbox },
   { key: 'work', label: '工作记录', icon: FolderKanban },
   { key: 'learning', label: '学习空间', icon: BookOpen },

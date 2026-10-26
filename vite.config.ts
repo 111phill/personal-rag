@@ -53,6 +53,9 @@ export default defineConfig(async () => {
       vinext(),
       sites(),
       cloudflare({
+        persistState: process.env.PERSONAL_RAG_STATE_DIR
+          ? { path: process.env.PERSONAL_RAG_STATE_DIR }
+          : true,
         viteEnvironment: { name: 'rsc', childEnvironments: ['ssr'] },
         config: localBindingConfig,
       }),

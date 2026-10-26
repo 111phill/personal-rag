@@ -27,7 +27,7 @@ export function AssistantPanel({ open, onClose, onOpenSource }: {
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const panelRef = useRef<HTMLElement>(null);
+  const panelRef = useRef<HTMLDialogElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -67,27 +67,17 @@ export function AssistantPanel({ open, onClose, onOpenSource }: {
   }, [activeId]);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ block: 'end' }); }, [messages, busy]);
-  const handlePanelKeyDown = useCallback((event: KeyboardEvent) => {
-    if (!open || !window.matchMedia('(max-width: 1250px)').matches) return;
-    if (event.key === 'Escape') { event.preventDefault(); onClose(); return; }
-    if (event.key !== 'Tab') return;
-    const focusable = [...(panelRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), select:not(:disabled), textarea:not(:disabled)') ?? [])];
-    if (!focusable.length) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-  }, [open, onClose]);
-
   useEffect(() => {
-    if (!open || !window.matchMedia('(max-width: 1250px)').matches) return;
+    if (!open) return;
+    const panel = panelRef.current;
+    if (!panel) return;
+    panel.showModal();
     const previous = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     if (inputRef.current?.disabled) closeRef.current?.focus();
     else inputRef.current?.focus();
-    document.addEventListener('keydown', handlePanelKeyDown);
-    return () => { document.body.style.overflow = previous; document.removeEventListener('keydown', handlePanelKeyDown); };
-  }, [open, handlePanelKeyDown]);
+    return () => { document.body.style.overflow = previous; panel.close(); };
+  }, [open]);
 
   async function newConversation() {
     if (busy) return;
@@ -134,8 +124,9 @@ export function AssistantPanel({ open, onClose, onOpenSource }: {
   }
 
   return <>
-    {open && <button className="agent-backdrop" aria-label="关闭助手" onClick={onClose} />}
-    <aside ref={panelRef} className={`companion-panel agent-panel ${open ? 'is-open' : ''}`} aria-label="记录对话 Agent">
+    <dialog ref={panelRef} className={`companion-panel agent-panel ${open ? 'is-open' : ''}`} aria-label="记录对话 Agent" closedby="any"
+      onCancel={(event) => { event.preventDefault(); onClose(); }}
+      onClose={() => { if (open) onClose(); }}>
       <div className="agent-panel-head">
         <div className="agent-identity"><span className="assistant-symbol"><Sparkles size={19} aria-hidden="true" /></span><div><strong>与你共想</strong><small>基于你的记录继续对话</small></div></div>
         <div className="agent-head-actions">
@@ -159,6 +150,6 @@ export function AssistantPanel({ open, onClose, onOpenSource }: {
         <textarea ref={inputRef} id="agent-question" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(); } }} placeholder="最近我在努力推进什么？" rows={3} maxLength={3000} disabled={busy || !state?.configured} />
         <div className="agent-composer-bottom"><span>相关记录会发送至配置的模型服务 · Shift + Enter 换行</span><Button size="icon" aria-label="发送问题" disabled={!draft.trim() || busy || !state?.configured} onClick={() => void send()}>{busy ? <LoaderCircle className="saving-spinner" size={16} /> : <Send size={16} />}</Button></div>
       </div>
-    </aside>
+    </dialog>
   </>;
 }

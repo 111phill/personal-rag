@@ -4,7 +4,12 @@ import { Miniflare } from 'miniflare';
 
 // 使用 Wrangler 所带的本地 D1 实现；测试传 false，绝不读取真实笔记。
 /** @param {string | boolean} persist */
-export function localRuntime(persist = resolve('.wrangler/state/v3/d1')) {
+export function localRuntime(
+  persist = resolve(
+    process.env.PERSONAL_RAG_STATE_DIR ?? '.wrangler/state',
+    'v3/d1',
+  ),
+) {
   return new Miniflare({
     modules: true,
     script:
